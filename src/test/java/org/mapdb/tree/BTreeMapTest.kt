@@ -236,6 +236,7 @@ class BTreeMapTest {
                 arrayOf(6, 7)
         )
 
+        // 设置了LAST_KEY_DOUBLE，表示最后一个key和相邻节点的第一个key是重复的
         val node1 = Node(
                 LEFT + LAST_KEY_DOUBLE,
                 map.store.put(node2, map.nodeSerializer),

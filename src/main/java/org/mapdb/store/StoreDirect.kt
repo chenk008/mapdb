@@ -16,6 +16,7 @@ import java.util.concurrent.atomic.AtomicLong
  * Store which uses binary storage (file, memory buffer...) and updates records on place.
  * It has memory allocator, so it reuses space freed by deletes and updates.
  */
+//StoreDirect 继承StoreDirectAbstract
 class StoreDirect(
         file:String?,
         volumeFactory: VolumeFactory,
@@ -42,6 +43,8 @@ class StoreDirect(
 ),StoreBinary{
 
 
+    //取消了static关键字，静态方法和参数统一写在companion object块
+    // 这里相当于实现了make静态方法
     companion object{
         fun make(
                 file:String?= null,
@@ -74,6 +77,7 @@ class StoreDirect(
         )
     }
 
+    // 常量
     protected val freeSize = AtomicLong(-1L)
 
     override val volume: Volume = {
@@ -650,6 +654,7 @@ class StoreDirect(
 
                 if (di.pos > MAX_RECORD_SIZE) {
                     //save as linked record
+                    // ﻿当一条记录大于64kb的时候，需要通过链接法
                     val indexVal = linkedRecordPut(di.buf, di.pos)
                     setIndexVal(recid, indexVal);
                     return recid
@@ -661,8 +666,10 @@ class StoreDirect(
                     offset = 0L
                 } else if (di.pos < 6) {
                     //store inside offset at index table
+                    // value字节数少于6，直接存到索引里
                     offset = DataIO.getLong(di.buf, 0).ushr((7 - di.pos) * 8)
                 } else {
+                    // 申请一块可以整除16的空间
                     offset = structuralLock.lock {
                         allocateData(roundUp(di.pos, 16), false)
                     }

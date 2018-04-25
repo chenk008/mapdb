@@ -22,8 +22,12 @@ public class BTreeMapJava {
     public static final int DIR = 1<<3;
     public static final int LEFT = 1<<2;
     public static final int RIGHT = 1<<1;
+    // 设置了LAST_KEY_DOUBLE，表示最后一个key和相邻节点的第一个key是重复的
     public static final int LAST_KEY_DOUBLE = 1;
 
+    /**
+     * b+树的一个节点
+     */
     public static class Node{
 
         /** bit flags (dir, left most, right most, next key equal to last...) */
@@ -70,7 +74,10 @@ public class BTreeMapJava {
             return flags&1;
         }
 
-
+        /**
+         * 判断是否非叶子节点
+         * @return
+         */
         boolean isDir(){
             return ((flags>>>3)&1)==1;
         }
@@ -83,6 +90,10 @@ public class BTreeMapJava {
             return ((flags>>>1)&1)==1;
         }
 
+        /**
+         * 最后一个key是否重复，相邻的两个节点都存了一份
+         * @return
+         */
         boolean isLastKeyDouble(){
             return ((flags)&1)==1;
         }
@@ -92,6 +103,12 @@ public class BTreeMapJava {
             return !isLastKeyDouble() && keySize == 2-intLeftEdge()-intRightEdge();
         }
 
+        /**
+         * b+树该节点的最大key
+         * @param keySerializer
+         * @param <K>
+         * @return
+         */
         @Nullable
         public <K> K highKey(GroupSerializer<K> keySerializer) {
             int keysLen = keySerializer.valueArraySize(keys);

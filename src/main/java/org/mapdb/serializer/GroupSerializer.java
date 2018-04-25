@@ -48,6 +48,13 @@ public interface GroupSerializer<A> extends Serializer<A> {
 
     int valueArraySearch(Object keys, A key);
 
+    /**
+     * 在keys中查找key
+     * @param keys
+     * @param key
+     * @param comparator
+     * @return
+     */
     int valueArraySearch(Object keys, A key, Comparator comparator);
 
     void valueArraySerialize(DataOutput2 out, Object vals) throws IOException;

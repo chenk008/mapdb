@@ -70,6 +70,7 @@ import java.util.function.BiConsumer
  * @author some parts by Doug Lea and JSR-166 group
  */
 //TODO counted btrees
+//类名后面跟着 主构造函数
 class BTreeMap<K,V>(
         override val keySerializer:GroupSerializer<K>,
         override val valueSerializer:GroupSerializer<V>,
@@ -195,6 +196,7 @@ class BTreeMap<K,V>(
         }
     }
 
+    // 主构造器中不能包含任何代码，初始化代码可以放在初始化代码段中，初始化代码段使用 init 关键字作为前缀。
     init{
         if(BTreeMap.NO_VAL_SERIALIZER==valueSerializer && hasValues)
             throw IllegalArgumentException("wrong value serializer")
@@ -222,6 +224,7 @@ class BTreeMap<K,V>(
 
     private val counter:Atomic.Long? = if(counterRecid>0) Atomic.Long(store, counterRecid, true) else null
 
+    //
     protected val rootRecid: Long
         get() = store.get(rootRecidRecid, Serializers.RECID)
                 ?: throw DBException.DataCorruption("Root Recid not found");
@@ -325,6 +328,7 @@ class BTreeMap<K,V>(
     private fun isLinkValue(pos:Int, A:Node):Boolean{
         // TODO this needs more investigation, what if lastKeyIsDouble and search jumped there?
         val pos2 = pos - 1 + A.intLeftEdge();
+        // 最后的key不是重复，同时位置大于values的size（代表key的个数大于value的个数）
         return (!A.isLastKeyDouble && pos2 >= valueNodeSerializer.valueArraySize(A.values))
     }
 
@@ -340,6 +344,7 @@ class BTreeMap<K,V>(
 
             var current = rootRecid
 
+            // 找到对应的叶子节点
             var A = getNode(current)
             while (A.isDir) {
                 var t = current
@@ -355,6 +360,7 @@ class BTreeMap<K,V>(
             do {
 
                 //TODO loop bellow follows link, leaf is already locked, only need to follow link is to handle inconsistencies after crash
+                // 在叶子节点中找到
                 leafLink@ while (true) {
                     lock(current)
 
@@ -367,11 +373,13 @@ class BTreeMap<K,V>(
                         current = A.link
                         continue@leafLink
                     }
+                    // key小于等于当前节点的最大值，则结束循环
                     break@leafLink
                 }
 
                 //current node is locked, and its highest value is higher/equal to key
                 var pos = keySerializer.valueArraySearch(A.keys, v, comparator)
+                // 在当前节点找到可以存放key的位置
                 if (pos >= 0) {
                     if(A.isDir) {
                         throw IllegalStateException(key.toString());
@@ -379,6 +387,7 @@ class BTreeMap<K,V>(
 
                     if(!isLinkValue(pos, A)) {
                         //entry exist in current node, so just update
+                        // 不是链接，表示在当前节点中找到了该key，做更新操作
                         pos = pos - 1 + A.intLeftEdge();
                         //key exist in node, just update
                         val oldValueRecid = valueNodeSerializer.valueArrayGet(A.values, pos)
@@ -392,9 +401,11 @@ class BTreeMap<K,V>(
                                 val values = valueNodeSerializer.valueArrayUpdateVal(A.values, pos, value)
                                 var flags = A.flags.toInt();
                                 A = Node(flags, A.link, A.keys, values)
+                                // 把整个node存到store中，values里面存的就是真实的value
                                 store.update(current, A, nodeSerializer)
                             } else {
                                 //update external value
+                                // 只把value存到store中，a.values里面存的其实是recid（记录id）
                                 store.update(oldValueRecid as Long, value, valueSerializer)
                             }
                             if(!modificationListenersEmpty)
@@ -404,15 +415,19 @@ class BTreeMap<K,V>(
                         return oldValueExpand
                     }else{
                         //is linked key, will set lastKeyDouble flag, keys are unmodified and values have new value
+                        // 是链接，就设置lastKeyDouble标志，把这个key对应的value插入到当前节点最后的位置
                         if(A.isLastKeyDouble)
                             throw IllegalStateException()
                         val flags = A.flags + BTreeMapJava.LAST_KEY_DOUBLE
                         val value2:Any? =
                                 if(valueInline) value
-                                else store.put(value, valueSerializer)
+                                else
+                                    // store写入新的value，返回的是recid
+                                    store.put(value, valueSerializer)
                         pos = pos - 1 + A.intLeftEdge()
                         val values = valueNodeSerializer.valueArrayPut(A.values, pos, value2)
                         A = Node(flags, A.link, A.keys, values)
+                        // 把整个node存到store中
                         store.update(current, A, nodeSerializer)
                         counter?.increment()
                         listenerNotify(key, null, value, false)
@@ -421,23 +436,27 @@ class BTreeMap<K,V>(
                     }
                 }
 
+                // 如果在叶子节点中找不到key，写入叶子节点或者做分裂
                 //normalise pos
                 pos =
                     if(pos>0) pos - 1 + A.intLeftEdge();
                     else -pos - 1
 
                 //key does not exist, node must be expanded
+                // 找不到key，那么key必须扩容
                 val isRoot = A.isLeftEdge && A.isRightEdge
                 A = if (A.isDir) {
                     copyAddKeyDir(A, pos, v, p)
                 } else {
                     counter?.increment()
                     listenerNotify(key, null, value, false)
+                    //
                     copyAddKeyLeaf(A, pos, v, value)
                 }
                 val keysSize = keySerializer.valueArraySize(A.keys) + A.intLastKeyTwice()
                 if (keysSize < maxNodeSize) {
                     //it is safe to insert without spliting
+                    // 写入叶子节点，不需要分裂
                     store.update(current, A, nodeSerializer)
                     unlock(current)
                     return null
@@ -611,7 +630,11 @@ class BTreeMap<K,V>(
     }
 
 
+    /**
+     * 分裂节点的时候，复制左边的数据
+     */
     private fun copySplitLeft(a: Node, splitPos: Int, link: Long): Node {
+        // 如果是dir，那么设置LAST_KEY_DOUBLE为false；如果是叶子节点，LAST_KEY_DOUBLE是true
         var flags = a.intDir() * DIR + a.intLeftEdge() * LEFT + LAST_KEY_DOUBLE * (1 - a.intDir())
 
         var keys = keySerializer.valueArrayCopyOfRange(a.keys, 0, splitPos)
@@ -632,7 +655,11 @@ class BTreeMap<K,V>(
 
     }
 
+    /**
+     * 分裂节点的时候，复制右边的数据
+     */
     private fun copySplitRight(a: Node, splitPos: Int): Node {
+        // 保留原来节点的LAST_KEY_DOUBLE标志
         val flags = a.intDir() * DIR + a.intRightEdge() * RIGHT + a.intLastKeyTwice() * LAST_KEY_DOUBLE
 
         val keys = keySerializer.valueArrayCopyOfRange(a.keys, splitPos - 1, keySerializer.valueArraySize(a.keys))
